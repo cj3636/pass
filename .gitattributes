@@ -1,0 +1,30 @@
+# Normalize line-endings and treat text as text
+* text=auto eol=lf
+
+# Scripts
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Mark binaries (avoid diff/merge by default)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.7z binary
+*.exe binary
+*.dll binary
+
+# Go
+*.go text
+
+# Python
+*.py text
+
+# Node/JS/TS
+*.js text
+*.ts text
+*.tsx text
+*.jsx text

@@ -1,0 +1,19 @@
+# Generic
+.DS_Store
+Thumbs.db
+*.log
+# User prefs
+*.swp
+# Output / tests / temp
+out/
+dist/
+test/
+tests/
+tmp/
+temp/
+tst/
+del/
+delme/
+# Maps / d.ts
+*.map
+*.d.ts
