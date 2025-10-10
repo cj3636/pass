@@ -1,180 +1,214 @@
 <!doctype html>
 <html lang="en_US">
-<head>
+  <head>
     <title>Password Generator</title>
-    <style>
-        /* === Darcula-inspired Dark Mode === */
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: #2B2B2B;
-            color: #A9B7C6;
-            font-family: sans-serif;
-        }
-        
-        /* Containers & Navigation */
-        div, nav {
-            background-color: transparent;
-            color: #A9B7C6;
-        }
-
-        /* Buttons */
-        button {
-            background-color: #3C3F41;
-            color: #A9B7C6;
-            border: 1px solid #6C6C6C;
-            padding: 5px 10px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #4C5052;
-        }
-
-        /* Inputs (text, number) */
-        input[type="text"],
-        input[type="number"],
-        textarea {
-            background-color: #3C3F41;
-            color: #A9B7C6;
-            border: 1px solid #6C6C6C;
-            padding: 3px;
-        }
-        input[type="checkbox"] {
-            accent-color: #A9B7C6; /* Modern browsers */
-        }
-
-        /* Additional classes */
-        .saveBtn, .clearBtn, .deleteBtn, .saveAllBtn, .clearAllBtn {
-            background-color: #3C3F41;
-            color: #A9B7C6;
-            border: 1px solid #6C6C6C;
-            padding: 5px 10px;
-            cursor: pointer;
-        }
-        .saveBtn:hover,
-        .clearBtn:hover,
-        .deleteBtn:hover,
-        .saveAllBtn:hover,
-        .clearAllBtn:hover {
-            background-color: #4C5052;
-        }
-
-        /* Keep the delete button's red text if you want it highlighted */
-        .deleteBtn {
-            color: #ff5555; 
-        }
-
-        /* Tooltip styling */
-        .tooltip {
-            position: relative;
-            display: inline-block;
-        }
-        .tooltip .tooltiptext {
-            visibility: hidden;
-            position: absolute;
-            z-index: 1;
-            top: 100%;
-            left: 50%;
-            margin-left: -50px;
-            width: 100px;
-            background-color: #3C3F41;
-            color: #A9B7C6;
-            border: 1px solid #6C6C6C;
-            text-align: center;
-            padding: 5px 0;
-            border-radius: 6px;
-        }
-        .tooltip:hover .tooltiptext {
-            visibility: visible;
-        }
-
-        /* Example of overriding inline backgrounds if needed */
-        /* If you want to override inline styles like "background-color: gray" */
-        /* you could force it with !important, e.g.:                       */
-        /*
-        .override-gray {
-            background-color: #3C3F41 !important;
-        }
-        */
-    </style>
-</head>
-<body>
-    <div>
-        <button onclick="genWordPassword(
-            document.getElementById('length').value,
-            document.getElementById('cap').checked,
-            document.getElementById('capAll').checked,
-            document.getElementById('sym').checked,
-            document.getElementById('symNum').value,
-            document.getElementById('symSimple').checked,
-            document.getElementById('num').checked,
-            document.getElementById('numNum').value);">Generate Word
-        </button>
-        <input type="number" id="length" value="4" min="1" max="256" style="width: 3em;">
-        <div style="display: inline; border: #6C6C6C 2px solid; padding: 3px;">
-            <input type="checkbox" id="cap" onchange="toggle('capAllNav');">CAPS
-            <nav id="capAllNav" hidden>
-                <input type="checkbox" id="capAll">CAPS Each
-            </nav>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/words/small.js" id="wordListScript" async></script>
+    <script src="js/main.js" defer></script>
+    <!-- Replaced by dynamic loading in main.js
+      <script src="js/pass.js" defer></script>
+    -->
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- App Header -->
+      <header class="app-header">
+        <h1 class="app-title">Password Generator</h1>
+        <div id="headerStatus" class="status-header" hidden>
+          <span id="headerStatusIcon" class="status-icon"></span>
+          <span id="headerStatusText" class="status-text"></span>
         </div>
-        <input type="checkbox" id="sym" onchange="toggle('symNumNav');">+Symbol
-        <nav id="symNumNav" hidden>
-            <input type="number" id="symNum" value="1" min="1" max="99" style="width: 2em;">Num
-            <input type="checkbox" id="symSimple">Simple
-        </nav>
-        <input type="checkbox" id="num" onchange="toggle('numNumNav');">+Number
-        <nav id="numNumNav" hidden>
-            <input type="number" id="numNum" value="1" min="1" max="99" style="width: 2em;">Num
-        </nav>
-    </div>
-    <button onclick="genWSN();">Generate WSN</button>
-    <form id="passEntry" name="password">
-        <input id="name" type="text" size="16" placeholder="Name" autocomplete="on">
-        <input id="username" type="text" size="16" placeholder="Username" autocomplete="new-username">
-        <input id="password" type="text" size="16" placeholder="Password" autocomplete="new-password">
-        <div class="tooltip">
-            <input id="togglePasswordCheckbox"
-                   class="togglePassword"
-                   type="checkbox"
-                   checked
-                   onchange="togglePass()">
-            <span class="tooltiptext">Show Password</span>
-        </div>
-        <!--        <textarea id="note" name="note" rows="1" cols="30" placeholder="Notes" autocomplete="on"></textarea>-->
-        <button class="saveBtn" onclick="addPasswordEntry();" type="button">Save</button>
-        <button class="clearBtn" onclick="clearInputs();" type="button">Clear</button>
-    </form>
-    <pre id="info" style="background-color: rgba(128,128,128,0.2)">&nbsp</pre>
-    <div>
-        <form>
-            <button class="saveAllBtn" type="button" style="background-color:
-        #177117;" onclick="genFakeUserPass();">gen
-            </button>
-            <button class="saveAllBtn" type="button" style="background-color:
-        #177117;" onclick="saveAll();">Save All
-            </button>
-            <button class="clearAllBtn" type="reset" style="background-color:
-        #ff0000;" onclick="tryClearAll()">Clear All
-            </button>
+      </header>
+
+      <!-- Controls Area (Left Side) -->
+      <div class="controls-area">
+        <!-- Word Password Generator Section -->
+        <section class="glass-card">
+          <h3 class="section-header">Word Password Generator</h3>
+
+          <div class="form-group">
+            <button id="generateWordBtn" class="btn-primary btn-lg">Generate
+              Word Password</button>
+          </div>
+
+          <div class="form-group">
+            <label for="length" class="align-left">Length:</label>
+            <div class="number-input-container">
+              <input id="length" class="number-input" type="number" value="4"
+                min="1" max="256">
+              <div class="number-controls">
+                <button type="button" class="number-btn" data-action="length-inc" aria-label="Increase length">▲</button>
+                <button type="button" class="number-btn" data-action="length-dec" aria-label="Decrease length">▼</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-group setting-row" data-checkbox="cap">
+              <div class="flex items-center gap-2 full-click">
+                <label class="toggle-switch">
+                  <input id="cap" type="checkbox">
+                  <span class="toggle-slider"></span>
+                </label>
+                <label for="cap">Capitalize</label>
+              </div>
+              <div id="capAllNav" class="nav-panel">
+                <div class="flex items-center gap-2">
+                  <label class="toggle-switch">
+                    <input id="capAll" type="checkbox">
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <label for="capAll">Capitalize Each Word</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group setting-row" data-checkbox="sym">
+              <div class="flex items-center gap-2 full-click">
+                <label class="toggle-switch">
+                  <input id="sym" type="checkbox">
+                  <span class="toggle-slider"></span>
+                </label>
+                <label for="sym">Add Symbols</label>
+              </div>
+              <div id="symNumNav" class="nav-panel">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <div class="flex items-center gap-2">
+                    <label for="symNum">Count:</label>
+                    <div class="number-input-container">
+                      <input id="symNum" class="number-input" type="number"
+                        value="1" min="1" max="99">
+                      <div class="number-controls">
+                        <button type="button" class="number-btn" data-action="sym-inc" aria-label="Increase symbol count">▲</button>
+                        <button type="button" class="number-btn" data-action="sym-dec" aria-label="Decrease symbol count">▼</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <label class="toggle-switch">
+                      <input id="symSimple" type="checkbox">
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <label for="symSimple">Simple Only</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group setting-row" data-checkbox="num">
+              <div class="flex items-center gap-2 full-click">
+                <label class="toggle-switch">
+                  <input id="num" type="checkbox">
+                  <span class="toggle-slider"></span>
+                </label>
+                <label for="num">Add Numbers</label>
+              </div>
+              <div id="numNumNav" class="nav-panel">
+                <div class="flex items-center gap-2">
+                  <label for="numNum">Count:</label>
+                  <div class="number-input-container">
+                    <input id="numNum" class="number-input" type="number"
+                      value="1" min="1" max="99">
+                    <div class="number-controls">
+                      <button type="button" class="number-btn" data-action="num-inc" aria-label="Increase number count">▲</button>
+                      <button type="button" class="number-btn" data-action="num-dec" aria-label="Decrease number count">▼</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div> <div class="form-group">
+            <button id="generateWSNBtn" class="btn-primary">Generate
+              WSN</button>
+          </div>
+        </section>
+
+        <!-- Password Entry Form -->
+        <section class="glass-card">
+          <h3 class="section-header">Save Password Entry</h3>
+
+          <form id="passEntry" name="password">
+            <div class="form-group">
+              <input id="name" type="text" placeholder="Name" autocomplete="on"
+                style="width: 100%;">
+            </div>
+            <div class="form-group">
+              <input id="username" type="text" placeholder="Username"
+                autocomplete="new-username" style="width: 100%;">
+            </div>
+            <div class="form-group">
+              <div class="password-field-wrap">
+                <input id="password" class="password-input embedded-switch" type="password" placeholder="Password" autocomplete="new-password">
+                <div class="embedded-switch-slot">
+                  <label class="toggle-switch password-switch compact" title="Show/Hide Password">
+                    <input id="passwordVisible" type="checkbox" data-target="password">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <button class="saveBtn btn-success" type="button">Save
+                Entry</button>
+              <button class="clearBtn" type="button">Clear</button>
+            </div>
+          </form>
+        </section>
+        <!-- Action Buttons -->
+        <section class="glass-card glass-card-sm">
+          <div class="flex justify-center gap-2 flex-wrap">
+            <button id="genBtn" class="btn-success btn-sm">Gen & Add</button>
+            <button id="saveAllBtn" class="btn-success btn-sm">Save All</button>
+            <button id="clearAllBtn" class="btn-danger btn-sm">Clear
+              All</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- Entries Area (Right Side) -->
+      <div class="entries-area">
+        <!-- Password List -->
+        <section class="glass-card" id="passwordsSection"
+          style="display: none; flex: 1;">
+          <h3 class="section-header">Saved Passwords</h3>
+          <div id="passwords" class="password-list-container">
+            <!-- Dynamic Password Entries -->
+          </div>
+        </section>
+      </div>
+
+      <!-- Hidden Template for Dynamic Password Entries -->
+      <div hidden>
+        <form id="passEntry_" name="password_" autocomplete="off"
+          class="password-entry">
+          <input id="name_" class="full-width" type="text" placeholder="Name"
+            autocomplete="off">
+          <input id="username_" class="full-width" type="text"
+            placeholder="Username"
+            autocomplete="off">
+          <div class="password-field-wrap">
+            <input id="password_" class="password-input embedded-switch" type="password" placeholder="Password" autocomplete="off">
+            <div class="embedded-switch-slot">
+              <label class="toggle-switch password-switch compact" title="Show/Hide">
+                <input type="checkbox" class="dynamic-pass-visible" data-target="password_">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="stacked-buttons">
+            <button id="save_" class="btn-save btn-sm"
+              type="button">Save</button>
+            <button id="delete_" class="btn-delete btn-sm"
+              type="button">Delete</button>
+          </div>
         </form>
+      </div>
     </div>
-    <br>
-    <div id="passwords"></div>
-    <div hidden="">
-        <form id="passEntry_" name="password_" autocomplete="off">
-            <input id="name_" type="text" size="16" placeholder="Name" autocomplete="off">
-            <input id="username_" type="text" size="16" placeholder="Username" autocomplete="off">
-            <input id="password_" type="password" size="16" placeholder="Password" autocomplete="off">
-            <input id="togglePasswordCheckbox_"
-                   class="togglePassword"
-                   type="checkbox"
-                   onchange="togglePass(document.getElementById(this.parentElement.id).getAttribute('name'))">
-            <button id="save_" class="saveBtn" onclick="editPasswordEntry(this.parentElement.id);" type="button">Save</button>
-            <button id="delete_" class="deleteBtn" onclick="deletePasswordEntry(this.parentElement.id)" type="button">Delete
-            </button>
-        </form>
-    </div>
-    <script src="js/words.js" defer></script>
-    <script src="js/pass.js" defer></script>
-</body>
+
+    <!-- Toast Notifications - Bottom Right -->
+    <div id="toast-container" class="toast-container"></div>
+  </body>
 </html>
