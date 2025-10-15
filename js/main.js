@@ -3,24 +3,27 @@
  * Enhanced with glass theme interactions and animations
  */
 
-// Will be populated when words js loads
-if (typeof WordList === 'undefined') { window.WordList = []; }
+// Remove duplicate initialization later; use single guarded init
+let __appInitialized = false;
 
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp();
 });
 
+/**
+ * Initialize Application (idempotent)
+ */
 function initializeApp() {
+  if (__appInitialized) return; // guard against multiple calls
+  __appInitialized = true;
+
   initializeEventListeners();
   initializeAnimations();
   setupPasswordVisibilityToggles();
   updatePasswordsDisplay();
   initializeToastSystem();
   initializeModalSystem();
-  initializeNotifySystem();
 }
-
-if (typeof WorldList == "undefined") { WordList = []; }
 
 // Dynamically load a script once by path
 function loadScript(path, { id } = {}) {
@@ -35,28 +38,6 @@ function loadScript(path, { id } = {}) {
   script.onerror = (e) => console.warn('Failed to load script:', path, e);
   document.head.appendChild(script);
   return true;
-}
-
-// Replaced by waitForWordList
-/*
-  // Wait for DOM to be fully loaded
-  document.addEventListener('DOMContentLoaded', function () {
-    initializeApp();
-  });
-*/
-document.addEventListener('DOMContentLoaded', async function () {
-  initializeApp();
-});
-/**
- * Initialize Application
- */
-function initializeApp() {
-  initializeEventListeners();
-  initializeAnimations();
-  setupPasswordVisibilityToggles();
-  updatePasswordsDisplay();
-  initializeToastSystem();
-  initializeModalSystem();
 }
 
 /**
@@ -217,19 +198,45 @@ function initializeEventListeners() {
 
   // Full row click for setting rows
   document.addEventListener('click', (e) => {
+    // Number button actions handled first to avoid row toggle side-effects
+    const numBtn = e.target.closest('button.number-btn[data-action]');
+    if (numBtn) {
+      const action = numBtn.getAttribute('data-action');
+      switch (action) {
+        case 'length-inc': changeLength(1); break;
+        case 'length-dec': changeLength(-1); break;
+        case 'sym-inc': changeSymNum(1); break;
+        case 'sym-dec': changeSymNum(-1); break;
+        case 'num-inc': changeNumNum(1); break;
+        case 'num-dec': changeNumNum(-1); break;
+      }
+      return; // stop here; don't treat as row toggle
+    }
+
     const row = e.target.closest('.setting-row');
     if (row) {
-      if (e.target.tagName === 'INPUT' || e.target.closest('label.toggle-switch')) return; // let native
+      // Do NOT toggle if click occurred inside an expanded nav panel or inside any interactive sub-control region
+      if (e.target.closest('.nav-panel')) return;
+      if (e.target.closest('.number-input-container')) return;
+      if (e.target.closest('.toggle-switch')) return; // inner toggle switches manage their own state
+      if (e.target.tagName === 'INPUT' || e.target.matches('input, select, textarea, button')) return;
+      // limit toggle to header portion only (element with .full-click)
+      const headerArea = row.querySelector('.full-click');
+      if (headerArea && !headerArea.contains(e.target)) return;
+
       const cbId = row.getAttribute('data-checkbox');
       if (!cbId) return;
+      const labelFor = e.target.closest('label[for]');
+      if (labelFor && labelFor.getAttribute('for') === cbId) return; // native label click already toggled
       const cb = document.getElementById(cbId);
       if (cb) {
         cb.checked = !cb.checked;
         cb.dispatchEvent(new Event('change', { bubbles: true }));
       }
+      return; // done processing row toggle
     }
 
-    // Number button actions
+    // (Fallback) legacy number button detection retained for robustness (should be redundant now)
     const btn = e.target.closest('button.number-btn[data-action]');
     if (btn) {
       const action = btn.getAttribute('data-action');
@@ -324,12 +331,13 @@ function togglePasswordVisibility(fieldId) {
 function handleSaveEntry() {
   const name = document.getElementById('name').value.trim();
   const username = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value.trim();
+  const passwordField = document.getElementById('password');
+  const password = passwordField.value.trim();
 
   // Validate required fields
   if (!password) {
     showFeedback('Password is required!', 'error');
-    document.getElementById('password').focus();
+    passwordField.focus();
     return;
   }
 
@@ -343,7 +351,8 @@ function handleSaveEntry() {
 
   // Call the original function
   addPasswordEntry();
-
+  // Restore password field so user can still see the saved password
+  passwordField.value = password;
   // Show success feedback
   showFeedback(`Entry "${finalName}" saved successfully!`, 'success');
 }
@@ -693,7 +702,7 @@ function initializeModalSystem() {
     console.info('WordList loaded!');
     console.log('List:', scriptTag.src.split('/').pop() || 'UNKNOWN');
     console.log('Words:', WordList.length, 'words.');
-    initializeApp();
+    // initializeApp(); // no longer needed; already initialized or guarded
     loadPasswordScript();
   } else {
     console.log('WordList Loading...');

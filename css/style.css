@@ -8,6 +8,7 @@
   --border-strong: rgba(255, 255, 255, 0.20);
   --text: #eaeef5;
   --text-muted: #b8c0cc;
+  --muted: #b8c0cc; /* alias for legacy reference */
   --text-dim: #8a95a6;
   --accent: #7aa2ff;
   --accent-2: #6af0d9;
@@ -760,7 +761,6 @@ h2 {
   text-align: center;
   padding-right: 26px;
   appearance: textfield;
-  -moz-appearance: textfield;
   background: transparent;
   border: none;
   color: var(--text);
@@ -799,25 +799,23 @@ h2 {
   line-height: 1;
   transition: background 0.15s ease, color 0.15s ease;
   padding: 0;
+  border-radius: 0; /* ensure square inside container */
 }
 
 .number-btn:first-child {
   border-bottom: 1px solid var(--border);
+  /* top button gets top-right radius of container */
+  border-top-right-radius: var(--radius-sm);
 }
 
-.number-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
+.number-btn:last-child {
+  /* bottom button gets bottom-right radius of container */
+  border-bottom-right-radius: var(--radius-sm);
 }
 
-.number-btn:active {
-  background: rgba(255, 255, 255, 0.14);
-  color: var(--text);
-}
-
-.number-btn:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: -2px;
+/* Prevent global button radius from overriding number buttons */
+.number-controls .number-btn {
+  border-left: none;
 }
 
 /* Header Status Inline */
@@ -1176,7 +1174,7 @@ input[type="checkbox"]:checked+.toggle-slider:before {
 }
 
 #profileModal .info-grid div:nth-child(odd) {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 #profileModal .danger {

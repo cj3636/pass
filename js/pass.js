@@ -21,6 +21,7 @@ function genWSN(keyLength = 9,
   const password = word + symbol + number;
   document.getElementById('password').value = password;
   copyToClipBoard(password);
+  return password; // <-- return generated password for reuse
 }
 
 function genFakeWord(length, upperCase = []) {
@@ -243,8 +244,20 @@ function clearInputs() {
 }
 
 function tryClearAll() {
-  if (confirm('Are You Sure?')) {
-    location.reload();
+  const doClear = () => {
+    passwords = [];
+    updatePasswords();
+    clearInputs();
+    if (window.showFeedback) window.showFeedback('All entries cleared', 'info');
+  };
+  if (window.customConfirm) {
+    customConfirm('This will remove ALL saved password entries. Continue?', {
+      title: 'Clear All Password Entries',
+      okText: 'Yes, Clear All',
+      cancelText: 'Cancel',
+      okType: 'danger'
+    }).then(ok => { if (ok) doClear(); });
+  } else {
   }
 }
 
@@ -308,10 +321,12 @@ function download(filename, text) {
 }
 
 function genFakeUserPass(num) {
-  genWSN();
+  const generated = genWSN(); // capture password
   document.getElementById('name').value = genFakeWord(6);
   document.getElementById('username').value = genFakeWord(6);
   addPasswordEntry();
+  // restore password field so user can see/copy it after adding entry
+  document.getElementById('password').value = generated;
 }
 
 function togglePass(id) {
