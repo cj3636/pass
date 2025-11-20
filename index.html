@@ -7,15 +7,13 @@
     <link rel="stylesheet" href="css/style.css">
     <script src="js/words/small.js" id="wordListScript" async></script>
     <script src="js/main.js" defer></script>
-    <!-- Replaced by dynamic loading in main.js
-      <script src="js/pass.js" defer></script>
-    -->
   </head>
   <body>
     <div class="app-container">
       <!-- App Header -->
       <header class="app-header">
         <h1 class="app-title">Password Generator</h1>
+        <span id="wordListStatus" class="pill wordlist-status">Loading word list…</span>
         <div id="headerStatus" class="status-header" hidden>
           <span id="headerStatusIcon" class="status-icon"></span>
           <span id="headerStatusText" class="status-text"></span>
@@ -138,7 +136,6 @@
         <!-- Password Entry Form -->
         <section class="glass-card">
           <h3 class="section-header">Save Password Entry</h3>
-
           <form id="passEntry" name="password">
             <div class="form-group">
               <input id="name" type="text" placeholder="Name" autocomplete="on"
@@ -157,7 +154,7 @@
                   <label class="toggle-switch password-switch compact"
                     title="Show/Hide Password">
                     <input id="passwordVisible" type="checkbox"
-                      data-target="password">
+                      data-target="password" checked>
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
@@ -172,12 +169,25 @@
           </form>
         </section>
         <!-- Action Buttons -->
-        <section class="glass-card glass-card-sm">
-          <div class="flex justify-center gap-2 flex-wrap">
+        <section class="glass-card glass-card-sm action-center">
+          <div class="auto-save-row">
+            <div class="flex items-center gap-2 full-click">
+              <label class="toggle-switch">
+                <input id="autoSaveToggle" type="checkbox">
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="auto-save-copy">
+                <div class="setting-title">Auto-save passwords</div>
+                <div class="setting-subtext">Sync list to this browser</div>
+              </div>
+            </div>
+            <span id="storageStatus" class="pill pill-muted">Local only</span>
+          </div>
+          <div class="flex justify-center gap-2 flex-wrap action-buttons">
             <button id="genBtn" class="btn-success btn-sm">Gen & Add</button>
-            <button id="saveAllBtn" class="btn-success btn-sm">Save All</button>
-            <button id="clearAllBtn" class="btn-danger btn-sm">Clear
-              All</button>
+            <button id="exportBtn" class="btn-primary btn-sm">Export</button>
+            <button id="importBtn" class="btn-primary btn-sm outline">Import</button>
+            <button id="clearAllBtn" class="btn-danger btn-sm">Clear All</button>
           </div>
         </section>
       </div>
@@ -195,34 +205,29 @@
       </div>
 
       <!-- Hidden Template for Dynamic Password Entries -->
-      <div hidden>
-        <form id="passEntry_" name="password_" autocomplete="off"
-          class="password-entry">
-          <input id="name_" class="full-width" type="text" placeholder="Name"
+      <template id="passwordEntryTemplate">
+        <form class="password-entry" autocomplete="off">
+          <input class="entry-name full-width" type="text" placeholder="Name"
             autocomplete="off">
-          <input id="username_" class="full-width" type="text"
-            placeholder="Username"
-            autocomplete="off">
+          <input class="entry-username full-width" type="text"
+            placeholder="Username" autocomplete="off">
           <div class="password-field-wrap">
-            <input id="password_" class="password-input embedded-switch"
+            <input class="password-input entry-password embedded-switch"
               type="password" placeholder="Password" autocomplete="off">
             <div class="embedded-switch-slot">
               <label class="toggle-switch password-switch compact"
-                title="Show/Hide">
-                <input type="checkbox" class="dynamic-pass-visible"
-                  data-target="password_">
+                title="Show/Hide Password">
+                <input type="checkbox" class="entry-visible-toggle">
                 <span class="toggle-slider"></span>
               </label>
             </div>
           </div>
           <div class="stacked-buttons">
-            <button id="save_" class="btn-save btn-sm"
-              type="button">Save</button>
-            <button id="delete_" class="btn-delete btn-sm"
-              type="button">Delete</button>
+            <button class="btn-save btn-sm" type="button">Save</button>
+            <button class="btn-delete btn-sm" type="button">Delete</button>
           </div>
         </form>
-      </div>
+      </template>
     </div>
 
     <!-- Toast Notifications - Bottom Right -->

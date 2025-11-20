@@ -75,6 +75,8 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .app-title {
@@ -942,6 +944,82 @@ h2 {
 
 .setting-row .full-click {
   width: 100%;
+}
+
+.action-center .full-click {
+  cursor: pointer;
+}
+
+.auto-save-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.auto-save-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setting-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.setting-subtext {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--glass-subtle);
+  font-size: 0.75rem;
+  letter-spacing: 0.2px;
+  color: var(--text-muted);
+}
+
+.pill-muted {
+  color: var(--text-muted);
+}
+
+.pill-success {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: var(--success);
+  background: rgba(74, 222, 128, 0.12);
+}
+
+.pill-danger {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: var(--danger);
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.wordlist-status {
+  font-size: 0.75rem;
+}
+
+.action-center .action-buttons {
+  margin-top: 4px;
+}
+
+.btn-primary.outline {
+  background: transparent;
+  color: var(--accent);
+  border-color: rgba(122, 162, 255, 0.65);
+}
+
+.btn-primary.outline:hover {
+  background: rgba(122, 162, 255, 0.08);
 }
 
 /* Embedded password field with internal switch slot */

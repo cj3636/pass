@@ -1,711 +1,970 @@
 /**
- * Modern Password Generator - Main JavaScript
- * Enhanced with glass theme interactions and animations
+ * Password Generator v2
+ * Streamlined, modular front-end logic focused on WSN workflow.
  */
+(() => {
+  'use strict';
 
-// Remove duplicate initialization later; use single guarded init
-let __appInitialized = false;
+  const StorageKeys = {
+    entries: 'pass:savedEntries',
+    autoSave: 'pass:autoSave',
+    lastGenerated: 'pass:lastGenerated'
+  };
 
-document.addEventListener('DOMContentLoaded', () => {
-  initializeApp();
-});
+  const state = {
+    initialized: false,
+    entries: [],
+    autoSave: true,
+    lastGenerated: '',
+    wordListReady: false
+  };
 
-/**
- * Initialize Application (idempotent)
- */
-function initializeApp() {
-  if (__appInitialized) return; // guard against multiple calls
-  __appInitialized = true;
+  const elements = {};
 
-  initializeEventListeners();
-  initializeAnimations();
-  setupPasswordVisibilityToggles();
-  updatePasswordsDisplay();
-  initializeToastSystem();
-  initializeModalSystem();
-}
+  const numberControls = {
+    'length-inc': { id: 'length', delta: 1, min: 1, max: 256 },
+    'length-dec': { id: 'length', delta: -1, min: 1, max: 256 },
+    'sym-inc': { id: 'symNum', delta: 1, min: 1, max: 99 },
+    'sym-dec': { id: 'symNum', delta: -1, min: 1, max: 99 },
+    'num-inc': { id: 'numNum', delta: 1, min: 1, max: 99 },
+    'num-dec': { id: 'numNum', delta: -1, min: 1, max: 99 }
+  };
 
-// Dynamically load a script once by path
-function loadScript(path, { id } = {}) {
-  if (!path) return false;
-  const scriptId = id || path.split('/').pop().split('.').shift();
-  if (document.getElementById(scriptId)) return true; // already loaded
-  const script = document.createElement('script');
-  script.src = path;
-  script.id = scriptId;
-  script.async = false;
-  script.onload = () => console.debug('Loaded script:', path);
-  script.onerror = (e) => console.warn('Failed to load script:', path, e);
-  document.head.appendChild(script);
-  return true;
-}
+  const SIMPLE_SYMBOLS = '!#$&-_';
+  const ALL_SYMBOLS = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
 
-/**
- * Toast notification system
- */
-function initializeToastSystem() {
-  window.showToast = function (message, type = 'info', duration = 3500, opts = {}) {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-    const { multiline = false, icon } = opts;
+  document.addEventListener('DOMContentLoaded', init);
 
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
+  function init() {
+    if (state.initialized) return;
+    state.initialized = true;
 
-    // Support array of lines or string with \n
-    let lines = [];
-    if (Array.isArray(message)) {
-      lines = message.map(l => String(l));
-    } else if (typeof message === 'string' && (multiline || message.includes('\n'))) {
-      lines = message.split(/\n+/).filter(Boolean);
-    } else {
-      lines = [String(message)];
-    }
+    cacheElements();
+    setWordListStatus('loading');
+    Storage.load();
+    Form.init();
+    Settings.init();
+    PasswordList.init();
+    Toasts.init();
+    Dialogs.init();
+    Visibility.init();
+    bindStaticEvents();
+    Settings.sync();
+    Form.syncFromState();
 
-    if (lines.length > 1) {
-      toast.classList.add('toast-rich');
-      if (icon) {
-        const iconEl = document.createElement('div');
-        iconEl.className = 'toast-icon';
-        iconEl.textContent = icon;
-        toast.appendChild(iconEl);
-      }
-      const wrap = document.createElement('div');
-      wrap.className = 'toast-lines';
-      lines.forEach((ln, idx) => {
-        const lineEl = document.createElement('div');
-        lineEl.className = 'toast-line';
-        lineEl.textContent = ln;
-        if (idx === 0) lineEl.style.fontWeight = '600';
-        wrap.appendChild(lineEl);
+    WordListLoader.wait()
+      .then(list => {
+        state.wordListReady = true;
+        setWordListStatus('ready');
+        console.info(`Word list ready (${list.length} words)`);
+      })
+      .catch(() => {
+        setWordListStatus('error');
+        showFeedback('Dictionary failed to load', 'error', { toast: true });
       });
-      toast.appendChild(wrap);
-    } else {
-      toast.textContent = lines[0];
+  }
+
+  function cacheElements() {
+    elements.generateWordBtn = document.getElementById('generateWordBtn');
+    elements.generateWSNBtn = document.getElementById('generateWSNBtn');
+    elements.saveBtn = document.querySelector('.saveBtn');
+    elements.clearBtn = document.querySelector('.clearBtn');
+    elements.genBtn = document.getElementById('genBtn');
+    elements.exportBtn = document.getElementById('exportBtn');
+    elements.importBtn = document.getElementById('importBtn');
+    elements.clearAllBtn = document.getElementById('clearAllBtn');
+    elements.autoSaveToggle = document.getElementById('autoSaveToggle');
+    elements.storageStatus = document.getElementById('storageStatus');
+    elements.passwordsSection = document.getElementById('passwordsSection');
+    elements.passwordsContainer = document.getElementById('passwords');
+    elements.passwordTemplate = document.getElementById('passwordEntryTemplate');
+    elements.wordListStatus = document.getElementById('wordListStatus');
+  }
+
+  function bindStaticEvents() {
+    elements.generateWordBtn?.addEventListener('click', handleGenerateWordPassword);
+    elements.generateWSNBtn?.addEventListener('click', handleGenerateWSN);
+    elements.saveBtn?.addEventListener('click', () => Form.handleSave());
+    elements.clearBtn?.addEventListener('click', () => {
+      Form.clear();
+      showFeedback('Form cleared', 'info');
+    });
+    elements.genBtn?.addEventListener('click', handleGenerateAndAdd);
+    elements.exportBtn?.addEventListener('click', () => PasswordList.exportEntries());
+    elements.importBtn?.addEventListener('click', () => PasswordList.importEntries());
+    elements.clearAllBtn?.addEventListener('click', () => PasswordList.clearAll());
+    elements.autoSaveToggle?.addEventListener('change', event => Settings.handleAutoSave(event));
+
+    initializeSettingPanels();
+    document.addEventListener('click', handleGlobalClicks);
+  }
+
+  function initializeSettingPanels() {
+    const map = { cap: 'capAllNav', sym: 'symNumNav', num: 'numNumNav' };
+    Object.entries(map).forEach(([checkboxId, panelId]) => {
+      const checkbox = document.getElementById(checkboxId);
+      if (!checkbox) return;
+      toggleNavPanel(panelId, checkbox.checked);
+      checkbox.addEventListener('change', () => toggleNavPanel(panelId, checkbox.checked));
+    });
+  }
+
+  function handleGlobalClicks(event) {
+    const numberBtn = event.target.closest('button.number-btn[data-action]');
+    if (numberBtn) {
+      handleNumberButton(numberBtn.getAttribute('data-action'));
+      return;
     }
 
-    container.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add('show'));
+    const settingRow = event.target.closest('.setting-row');
+    if (settingRow) {
+      if (event.target.closest('.nav-panel')) return;
+      if (event.target.closest('.number-input-container')) return;
+      if (event.target.closest('.toggle-switch')) return;
+      if (event.target.closest('button')) return;
+      const headerArea = settingRow.querySelector('.full-click');
+      if (headerArea && !event.target.closest('.full-click')) return;
+      const checkboxId = settingRow.getAttribute('data-checkbox');
+      if (!checkboxId) return;
+      const labelFor = event.target.closest('label[for]');
+      if (labelFor && labelFor.getAttribute('for') === checkboxId) return;
+      const checkbox = document.getElementById(checkboxId);
+      if (!checkbox) return;
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
 
-    setTimeout(() => {
-      toast.classList.remove('show');
-      setTimeout(() => toast.remove(), 350);
-    }, duration);
+  function handleNumberButton(action) {
+    const config = numberControls[action];
+    if (!config) return;
+    const input = document.getElementById(config.id);
+    if (!input) return;
+    const current = parseInt(input.value, 10);
+    const next = clamp(isNaN(current) ? config.min : current + config.delta, config.min, config.max);
+    input.value = next;
+  }
+
+  function handleGenerateWSN() {
+    const password = Generators.wsn();
+    handlePasswordCreated(password, { label: 'WSN password' });
+  }
+
+  function handleGenerateWordPassword() {
+    if (!state.wordListReady) {
+      showFeedback('Word list loading, try again shortly', 'info', { toast: true });
+      return;
+    }
+    console.log('Generating word password');
+    const settings = {
+      length: readNumberValue('length', 4, 1, 256),
+      cap: document.getElementById('cap')?.checked || false,
+      capAll: document.getElementById('capAll')?.checked || false,
+      sym: document.getElementById('sym')?.checked || false,
+      symNum: readNumberValue('symNum', 1, 1, 99),
+      symSimple: document.getElementById('symSimple')?.checked ?? true,
+      num: document.getElementById('num')?.checked || false,
+      numNum: readNumberValue('numNum', 2, 1, 99)
+    };
+    const password = Generators.wordPassword(settings);
+    handlePasswordCreated(password, { label: `${settings.length}-word password` });
+  }
+
+  function handleGenerateAndAdd() {
+    const password = Generators.wsn();
+    handlePasswordCreated(password, { label: 'Generated entry' });
+    const entry = {
+      id: createId(),
+      name: FakeWords.generate(6, true),
+      username: FakeWords.generate(6, false).toLowerCase(),
+      password
+    };
+    PasswordList.add(entry);
+    showFeedback('Generated and saved entry', 'success', { toast: true });
+  }
+
+  function handlePasswordCreated(password, meta = {}) {
+    if (!password) return;
+    Form.setPassword(password);
+    state.lastGenerated = password;
+    Storage.persistLast(password);
+    Clipboard.copy(password)
+      .then(() => {
+        window.onPasswordGenerated?.(password, { copied: true, type: 'success' });
+      })
+      .catch(() => {
+        window.onPasswordGenerated?.(password, { copied: false, type: 'warning' });
+      });
+    showFeedback(meta.label || 'Password generated', 'info');
+  }
+
+  function readNumberValue(id, fallback, min, max) {
+    const el = document.getElementById(id);
+    const value = el ? parseInt(el.value, 10) : NaN;
+    return clamp(isNaN(value) ? fallback : value, min, max);
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  const Storage = {
+    load() {
+      try {
+        state.autoSave = readBoolean(localStorage.getItem(StorageKeys.autoSave), true);
+        state.entries = normalizeEntries(readJson(localStorage.getItem(StorageKeys.entries)));
+      } catch (err) {
+        console.warn('Unable to read saved entries', err);
+        state.autoSave = true;
+        state.entries = [];
+      }
+      state.lastGenerated = readSessionValue(StorageKeys.lastGenerated);
+    },
+    persistEntries(opts = {}) {
+      if (!state.autoSave && !opts.force) return;
+      try {
+        localStorage.setItem(StorageKeys.entries, JSON.stringify(state.entries));
+      } catch (err) {
+        console.warn('Unable to persist entries', err);
+      }
+    },
+    clearEntries() {
+      try {
+        localStorage.removeItem(StorageKeys.entries);
+      } catch (_) { /* ignore */ }
+    },
+    persistAutoSave(flag) {
+      try {
+        localStorage.setItem(StorageKeys.autoSave, flag ? '1' : '0');
+      } catch (_) { /* ignore */ }
+    },
+    persistLast(password) {
+      try {
+        sessionStorage.setItem(StorageKeys.lastGenerated, password);
+      } catch (_) { /* ignore */ }
+    }
   };
 
-  // Hook for password generation events (word or WSN)
-  window.onPasswordGenerated = function (password, { copied = true, type = 'success' } = {}) {
-    // Two-line toast: password on first; copied line second
-    const lines = copied ? [password, 'Copied to clipboard'] : [password];
-    showToast(lines, type, 4500, { multiline: true, icon: '🔑' });
+  const Form = {
+    init() {
+      this.nameInput = document.getElementById('name');
+      this.usernameInput = document.getElementById('username');
+      this.passwordInput = document.getElementById('password');
+    },
+    collect() {
+      return {
+        id: createId(),
+        name: this.nameInput?.value.trim() || 'Unnamed',
+        username: this.usernameInput?.value.trim() || 'user',
+        password: this.passwordInput?.value.trim() || ''
+      };
+    },
+    handleSave() {
+      const entry = this.collect();
+      if (!entry.password) {
+        showFeedback('Password is required', 'error');
+        this.passwordInput?.focus();
+        return;
+      }
+      PasswordList.add(entry);
+      this.clear();
+      this.setPassword(entry.password);
+      showFeedback(`Entry "${entry.name}" saved`, 'success');
+    },
+    clear() {
+      if (this.nameInput) this.nameInput.value = '';
+      if (this.usernameInput) this.usernameInput.value = '';
+      if (this.passwordInput) this.passwordInput.value = '';
+    },
+    setPassword(value) {
+      if (this.passwordInput) {
+        this.passwordInput.value = value;
+      }
+    },
+    syncFromState() {
+      if (state.lastGenerated && this.passwordInput) {
+        this.passwordInput.value = state.lastGenerated;
+      }
+    }
   };
-}
 
-/**
- * Number input controls - Make them global for HTML onclick handlers
- */
-window.changeLength = function (delta) {
-  const input = document.getElementById('length');
-  const current = parseInt(input.value) || 4;
-  const newValue = Math.max(1, Math.min(256, current + delta));
-  input.value = newValue;
-};
-
-window.changeSymNum = function (delta) {
-  const input = document.getElementById('symNum');
-  const current = parseInt(input.value) || 1;
-  const newValue = Math.max(1, Math.min(99, current + delta));
-  input.value = newValue;
-};
-
-window.changeNumNum = function (delta) {
-  const input = document.getElementById('numNum');
-  const current = parseInt(input.value) || 1;
-  const newValue = Math.max(1, Math.min(99, current + delta));
-  input.value = newValue;
-};
-
-/** Unified password visibility handling using switches */
-function setPasswordVisibility(inputEl, visible) {
-  if (!inputEl) return;
-  inputEl.type = visible ? 'text' : 'password';
-}
-
-function attachPasswordSwitchHandlers() {
-  // Main password
-  const mainSwitch = document.querySelector('.password-switch input#passwordVisible');
-  const mainInput = document.getElementById('password');
-  if (mainSwitch && mainInput) {
-    mainSwitch.addEventListener('change', () => setPasswordVisibility(mainInput, mainSwitch.checked));
-  }
-
-  // Dynamic entries (delegation)
-  document.addEventListener('change', (e) => {
-    const target = e.target;
-    if (target.matches('.dynamic-pass-visible')) {
-      let field = null;
-      // New structure: inside .password-field-wrap
-      const wrap = target.closest('.password-field-wrap');
-      if (wrap) field = wrap.querySelector('input.password-input');
-      if (!field) {
-        const container = target.closest('.password-input-container');
-        if (container) field = container.querySelector('input.password-input');
+  const Settings = {
+    init() {
+      this.autoSaveToggle = elements.autoSaveToggle;
+      this.storageStatus = elements.storageStatus;
+    },
+    sync() {
+      if (this.autoSaveToggle) {
+        this.autoSaveToggle.checked = state.autoSave;
       }
-      setPasswordVisibility(field, target.checked);
+      updateStorageStatus();
+    },
+    handleAutoSave(event) {
+      const enabled = !!event.target.checked;
+      state.autoSave = enabled;
+      Storage.persistAutoSave(enabled);
+      if (enabled) {
+        Storage.persistEntries({ force: true });
+      } else {
+        Storage.clearEntries();
+      }
+      updateStorageStatus();
+      showFeedback(enabled ? 'Auto-save enabled' : 'Auto-save disabled', enabled ? 'success' : 'info');
     }
-  });
-}
+  };
 
-/**
- * Initialize all event listeners for the application
- */
-function initializeEventListeners() {
-  // Generate Word Password button
-  const generateWordBtn = document.getElementById('generateWordBtn');
-  if (generateWordBtn) {
-    generateWordBtn.addEventListener('click', handleGenerateWordPassword);
-  }
-
-  // Generate WSN button
-  const generateWSNBtn = document.getElementById('generateWSNBtn');
-  if (generateWSNBtn) {
-    generateWSNBtn.addEventListener('click', function () {
-      genWSN();
-    });
-  }
-
-  // Checkbox toggles for navigation visibility with enhanced animations
-  const capCheckbox = document.getElementById('cap');
-  if (capCheckbox) {
-    capCheckbox.addEventListener('change', function () {
-      toggleNavPanel('capAllNav', this.checked);
-    });
-  }
-
-  const symCheckbox = document.getElementById('sym');
-  if (symCheckbox) {
-    symCheckbox.addEventListener('change', function () {
-      toggleNavPanel('symNumNav', this.checked);
-    });
-  }
-
-  const numCheckbox = document.getElementById('num');
-  if (numCheckbox) {
-    numCheckbox.addEventListener('change', function () {
-      toggleNavPanel('numNumNav', this.checked);
-    });
-  }
-
-  // Full row click for setting rows
-  document.addEventListener('click', (e) => {
-    // Number button actions handled first to avoid row toggle side-effects
-    const numBtn = e.target.closest('button.number-btn[data-action]');
-    if (numBtn) {
-      const action = numBtn.getAttribute('data-action');
-      switch (action) {
-        case 'length-inc': changeLength(1); break;
-        case 'length-dec': changeLength(-1); break;
-        case 'sym-inc': changeSymNum(1); break;
-        case 'sym-dec': changeSymNum(-1); break;
-        case 'num-inc': changeNumNum(1); break;
-        case 'num-dec': changeNumNum(-1); break;
+  const PasswordList = {
+    init() {
+      this.container = elements.passwordsContainer;
+      this.section = elements.passwordsSection;
+      this.template = elements.passwordTemplate;
+      this.importInput = null;
+      if (this.container) {
+        this.container.addEventListener('click', event => this.handleClick(event));
+        this.container.addEventListener('change', event => this.handleChange(event));
       }
-      return; // stop here; don't treat as row toggle
+      this.render();
+    },
+    handleClick(event) {
+      const form = event.target.closest('form.password-entry');
+      if (!form) return;
+      if (event.target.closest('.btn-save')) {
+        this.saveExisting(form);
+      } else if (event.target.closest('.btn-delete')) {
+        this.requestDelete(form);
+      }
+    },
+    handleChange(event) {
+      if (event.target.classList.contains('entry-visible-toggle')) {
+        const form = event.target.closest('form.password-entry');
+        const input = form?.querySelector('.entry-password');
+        Visibility.set(input, event.target.checked);
+      }
+    },
+    add(entry) {
+      state.entries.push(buildEntry(entry));
+      this.render();
+      Storage.persistEntries();
+    },
+    saveExisting(form) {
+      const payload = this.collectFormData(form);
+      const idx = state.entries.findIndex(entry => entry.id === payload.id);
+      if (idx === -1) return;
+      state.entries[idx] = payload;
+      this.render();
+      Storage.persistEntries();
+      showFeedback(`Entry "${payload.name}" updated`, 'success');
+    },
+    requestDelete(form) {
+      const entryId = form.dataset.entryId;
+      const entry = state.entries.find(item => item.id === entryId);
+      const label = entry?.name || 'entry';
+      const remove = () => {
+        state.entries = state.entries.filter(item => item.id !== entryId);
+        this.render();
+        Storage.persistEntries();
+        showFeedback(`Deleted "${label}"`, 'info');
+      };
+      if (window.customConfirm) {
+        customConfirm(`Delete password entry "${label}"?`, {
+          okText: 'Delete',
+          okType: 'danger'
+        }).then(ok => { if (ok) remove(); });
+      } else if (window.confirm(`Delete password entry "${label}"?`)) {
+        remove();
+      }
+    },
+    clearAll() {
+      if (!state.entries.length) {
+        showFeedback('No saved passwords to clear', 'info');
+        return;
+      }
+      const wipe = () => {
+        state.entries = [];
+        this.render();
+        Storage.persistEntries({ force: true });
+        showFeedback('All saved passwords cleared', 'info');
+      };
+      if (window.customConfirm) {
+        customConfirm('Remove all saved passwords?', {
+          title: 'Clear Passwords',
+          okText: 'Clear All',
+          okType: 'danger'
+        }).then(ok => { if (ok) wipe(); });
+      } else if (window.confirm('Remove all saved passwords?')) {
+        wipe();
+      }
+    },
+    exportEntries() {
+      if (!state.entries.length) {
+        showFeedback('No passwords to export', 'info');
+        return;
+      }
+      const payload = {
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        entries: state.entries
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `passwords-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      showFeedback('Passwords exported', 'success', { toast: true });
+    },
+    importEntries() {
+      if (!this.importInput) {
+        this.importInput = createImportInput(files => this.handleImport(files));
+      }
+      this.importInput.value = '';
+      this.importInput.click();
+    },
+    handleImport(files) {
+      const file = files?.[0];
+      if (!file) return;
+      file.text().then(text => {
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch (err) {
+          throw new Error('Invalid import file');
+        }
+        const incoming = normalizeEntries(parsed.entries || parsed);
+        if (!incoming.length) {
+          throw new Error('Import file has no entries');
+        }
+        state.entries = incoming;
+        this.render();
+        Storage.persistEntries({ force: true });
+        showFeedback(`Imported ${incoming.length} password(s)`, 'success', { toast: true });
+      }).catch(err => {
+        console.error(err);
+        showFeedback(err.message || 'Import failed', 'error', { toast: true });
+      });
+    },
+    render() {
+      if (!this.container) return;
+      this.container.innerHTML = '';
+      if (!state.entries.length) {
+        if (this.section) this.section.style.display = 'none';
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      state.entries.forEach(entry => fragment.appendChild(this.createEntryNode(entry)));
+      this.container.appendChild(fragment);
+      if (this.section) this.section.style.display = 'block';
+    },
+    createEntryNode(entry) {
+      let form;
+      if (this.template && this.template.content) {
+        const node = this.template.content.cloneNode(true);
+        form = node.querySelector('form');
+      }
+      if (!form) {
+        form = document.createElement('form');
+        form.className = 'password-entry';
+      }
+      form.dataset.entryId = entry.id;
+      const nameInput = form.querySelector('.entry-name');
+      const userInput = form.querySelector('.entry-username');
+      const passInput = form.querySelector('.entry-password');
+      if (nameInput) nameInput.value = entry.name;
+      if (userInput) userInput.value = entry.username;
+      if (passInput) passInput.value = entry.password;
+      return form;
+    },
+    collectFormData(form) {
+      return {
+        id: form.dataset.entryId || createId(),
+        name: form.querySelector('.entry-name')?.value.trim() || 'Unnamed',
+        username: form.querySelector('.entry-username')?.value.trim() || 'user',
+        password: form.querySelector('.entry-password')?.value.trim() || ''
+      };
+    }
+  };
+
+  const Visibility = {
+    init() {
+      const toggle = document.getElementById('passwordVisible');
+      const input = document.getElementById('password');
+      if (toggle && input) {
+        this.set(input, toggle.checked);
+        toggle.addEventListener('change', () => this.set(input, toggle.checked));
+      }
+    },
+    set(input, visible) {
+      if (!input) return;
+      input.type = visible ? 'text' : 'password';
+    }
+  };
+
+  const Clipboard = {
+    copy(text) {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        return navigator.clipboard.writeText(text);
+      }
+      return new Promise((resolve, reject) => {
+        try {
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          const successful = document.execCommand('copy');
+          document.body.removeChild(textarea);
+          if (successful) {
+            resolve();
+          } else {
+            reject(new Error('Copy failed'));
+          }
+        } catch (err) {
+          reject(err);
+        }
+      });
+    }
+  };
+
+  const Toasts = {
+    init() {
+      window.showToast = function (message, type = 'info', duration = 3500, opts = {}) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const { multiline = false, icon } = opts;
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+
+        const lines = Array.isArray(message)
+          ? message.map(line => String(line))
+          : (typeof message === 'string' && (multiline || message.includes('\n')))
+            ? message.split(/\n+/).filter(Boolean)
+            : [String(message)];
+
+        if (lines.length > 1) {
+          toast.classList.add('toast-rich');
+          if (icon) {
+            const iconEl = document.createElement('div');
+            iconEl.className = 'toast-icon';
+            iconEl.textContent = icon;
+            toast.appendChild(iconEl);
+          }
+          const wrap = document.createElement('div');
+          wrap.className = 'toast-lines';
+          lines.forEach((line, idx) => {
+            const row = document.createElement('div');
+            row.className = 'toast-line';
+            row.textContent = line;
+            if (idx === 0) row.style.fontWeight = '600';
+            wrap.appendChild(row);
+          });
+          toast.appendChild(wrap);
+        } else {
+          toast.textContent = lines[0];
+        }
+
+        container.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add('show'));
+        setTimeout(() => {
+          toast.classList.remove('show');
+          setTimeout(() => toast.remove(), 350);
+        }, duration);
+      };
+
+      window.onPasswordGenerated = function (password, { copied = true, type = 'success' } = {}) {
+        const lines = copied ? [password, 'Copied to clipboard'] : [password, 'Copy failed'];
+        window.showToast(lines, type, 4500, { multiline: true, icon: copied ? '🔐' : '⚠️' });
+      };
+    }
+  };
+
+  const Dialogs = {
+    init() {
+      if (!document.getElementById('dialogModal')) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `
+<div class="modal" id="dialogModal" aria-hidden="true">
+  <div class="modal-card dialog-card" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+    <h3 id="dialogTitle" class="dialog-title">Dialog</h3>
+    <div class="dialog-message" id="dialogMessage"></div>
+    <div class="dialog-input-wrap" id="dialogInputWrap" style="display:none;">
+      <input type="text" id="dialogInput" autocomplete="off" />
+    </div>
+    <div class="modal-actions dialog-actions">
+      <button class="btn" id="dialogCancel">Cancel</button>
+      <button class="btn primary" id="dialogOk">OK</button>
+    </div>
+  </div>
+</div>`;
+        document.body.appendChild(wrapper.firstElementChild);
+      }
+      const modal = document.getElementById('dialogModal');
+      const titleEl = document.getElementById('dialogTitle');
+      const messageEl = document.getElementById('dialogMessage');
+      const inputWrap = document.getElementById('dialogInputWrap');
+      const inputEl = document.getElementById('dialogInput');
+      const okBtn = document.getElementById('dialogOk');
+      const cancelBtn = document.getElementById('dialogCancel');
+
+      function openModal({ title, message, showInput = false, okText = 'OK', cancelText = 'Cancel', okType }) {
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        inputWrap.style.display = showInput ? 'block' : 'none';
+        inputEl.value = '';
+        okBtn.textContent = okText;
+        cancelBtn.textContent = cancelText;
+        okBtn.classList.toggle('danger', okType === 'danger');
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        if (showInput) {
+          setTimeout(() => inputEl.focus(), 30);
+        } else {
+          okBtn.focus();
+        }
+      }
+
+      function closeModal() {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+
+      window.customAlert = function (message, title = 'Alert') {
+        return new Promise(resolve => {
+          openModal({ title, message });
+          function cleanup() {
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            document.removeEventListener('keydown', onKey);
+            closeModal();
+            resolve();
+          }
+          function handleOk() { cleanup(); }
+          function handleCancel() { cleanup(); }
+          function onKey(e) {
+            if (e.key === 'Escape') handleCancel();
+            if (e.key === 'Enter') handleOk();
+          }
+          okBtn.addEventListener('click', handleOk);
+          cancelBtn.addEventListener('click', handleCancel);
+          document.addEventListener('keydown', onKey);
+        });
+      };
+
+      window.customConfirm = function (message, { title = 'Confirm', okText = 'OK', cancelText = 'Cancel', okType } = {}) {
+        return new Promise(resolve => {
+          openModal({ title, message, okText, cancelText, okType });
+          function cleanup(result) {
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            document.removeEventListener('keydown', onKey);
+            closeModal();
+            resolve(result);
+          }
+          function handleOk() { cleanup(true); }
+          function handleCancel() { cleanup(false); }
+          function onKey(e) {
+            if (e.key === 'Escape') handleCancel();
+            if (e.key === 'Enter') handleOk();
+          }
+          okBtn.addEventListener('click', handleOk);
+          cancelBtn.addEventListener('click', handleCancel);
+          document.addEventListener('keydown', onKey);
+        });
+      };
+
+      window.customPrompt = function (message, { title = 'Prompt', placeholder = '', okText = 'OK', cancelText = 'Cancel' } = {}) {
+        return new Promise(resolve => {
+          openModal({ title, message, showInput: true, okText, cancelText });
+          inputEl.placeholder = placeholder;
+          function cleanup(result) {
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            document.removeEventListener('keydown', onKey);
+            closeModal();
+            resolve(result);
+          }
+          function handleOk() { cleanup(inputEl.value); }
+          function handleCancel() { cleanup(null); }
+          function onKey(e) {
+            if (e.key === 'Escape') handleCancel();
+            if (e.key === 'Enter') handleOk();
+          }
+          okBtn.addEventListener('click', handleOk);
+          cancelBtn.addEventListener('click', handleCancel);
+          document.addEventListener('keydown', onKey);
+        });
+      };
+
+      window.alert = msg => window.customAlert(String(msg));
+      window.confirm = msg => { console.warn('confirm() overridden; use customConfirm'); window.customConfirm(String(msg)); return true; };
+      window.prompt = (msg, def = '') => { console.warn('prompt() overridden; use customPrompt'); window.customPrompt(String(msg), { placeholder: def }); return def; };
+    }
+  };
+
+  const WordListLoader = (() => {
+    let cache = [];
+    let promise;
+    const buckets = new Map();
+
+    function wait() {
+      if (!promise) {
+        promise = new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Word list timeout')), 15000);
+          const poll = () => {
+            if (Array.isArray(window.WordList) && window.WordList.length) {
+              clearTimeout(timeout);
+              cache = window.WordList.slice();
+              resolve(cache);
+            } else {
+              setTimeout(poll, 80);
+            }
+          };
+          poll();
+        });
+      }
+      return promise;
     }
 
-    const row = e.target.closest('.setting-row');
-    if (row) {
-      // Do NOT toggle if click occurred inside an expanded nav panel or inside any interactive sub-control region
-      if (e.target.closest('.nav-panel')) return;
-      if (e.target.closest('.number-input-container')) return;
-      if (e.target.closest('.toggle-switch')) return; // inner toggle switches manage their own state
-      if (e.target.tagName === 'INPUT' || e.target.matches('input, select, textarea, button')) return;
-      // limit toggle to header portion only (element with .full-click)
-      const headerArea = row.querySelector('.full-click');
-      if (headerArea && !headerArea.contains(e.target)) return;
-
-      const cbId = row.getAttribute('data-checkbox');
-      if (!cbId) return;
-      const labelFor = e.target.closest('label[for]');
-      if (labelFor && labelFor.getAttribute('for') === cbId) return; // native label click already toggled
-      const cb = document.getElementById(cbId);
-      if (cb) {
-        cb.checked = !cb.checked;
-        cb.dispatchEvent(new Event('change', { bubbles: true }));
+    function pickWord(maxLength = 0) {
+      if (!cache.length) return null;
+      if (!maxLength || maxLength <= 0) {
+        return cache[Math.floor(Math.random() * cache.length)];
       }
-      return; // done processing row toggle
+      let bucket = buckets.get(maxLength);
+      if (!bucket) {
+        bucket = cache.filter(word => word.length <= maxLength);
+        buckets.set(maxLength, bucket);
+      }
+      const source = bucket.length ? bucket : cache;
+      return source[Math.floor(Math.random() * source.length)];
     }
 
-    // (Fallback) legacy number button detection retained for robustness (should be redundant now)
-    const btn = e.target.closest('button.number-btn[data-action]');
-    if (btn) {
-      const action = btn.getAttribute('data-action');
-      switch (action) {
-        case 'length-inc': changeLength(1); break;
-        case 'length-dec': changeLength(-1); break;
-        case 'sym-inc': changeSymNum(1); break;
-        case 'sym-dec': changeSymNum(-1); break;
-        case 'num-inc': changeNumNum(1); break;
-        case 'num-dec': changeNumNum(-1); break;
+    return { wait, pickWord };
+  })();
+
+  const FakeWords = (() => {
+    const vowels = 'aeiou';
+    const consonants = 'bcdfghjklmnprstvwxyz';
+
+    function generate(length = 6, capitalizeFirst = false) {
+      let word = '';
+      let useVowel = false;
+      for (let i = 0; i < length; i++) {
+        const source = useVowel ? vowels : consonants;
+        let letter = source[Math.floor(Math.random() * source.length)];
+        if (capitalizeFirst && i === 0) {
+          letter = letter.toUpperCase();
+        }
+        word += letter;
+        useVowel = !useVowel;
       }
+      return word;
     }
-  });
 
-  // Password visibility switches
-  attachPasswordSwitchHandlers();
+    return { generate };
+  })();
 
-  // Form buttons with enhanced feedback
-  const saveBtn = document.querySelector('.saveBtn');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', handleSaveEntry);
-  }
-
-  const clearBtn = document.querySelector('.clearBtn');
-  if (clearBtn) {
-    clearBtn.addEventListener('click', handleClearForm);
-  }
-
-  // Action buttons
-  const genBtn = document.getElementById('genBtn');
-  if (genBtn) {
-    genBtn.addEventListener('click', function () {
-      genFakeUserPass();
-    });
-  }
-
-  const saveAllBtn = document.getElementById('saveAllBtn');
-  if (saveAllBtn) {
-    saveAllBtn.addEventListener('click', function () {
-      saveAll();
-    });
-  }
-
-  const clearAllBtn = document.getElementById('clearAllBtn');
-  if (clearAllBtn) {
-    clearAllBtn.addEventListener('click', function () {
-      tryClearAll();
-    });
-  }
-
-  // Dynamic elements (for password entries)
-  initializeDynamicEventListeners();
-}
-
-/**
- * Enhanced navigation panel toggle with smooth animations
- */
-function toggleNavPanel(panelId, show) {
-  const panel = document.getElementById(panelId);
-  if (!panel) return;
-
-  if (show) {
-    panel.classList.add('show');
-    panel.style.display = 'block';
-  } else {
-    panel.classList.remove('show');
-    // Delay hiding to allow animation to complete
-    setTimeout(() => {
-      if (!panel.classList.contains('show')) {
-        panel.style.display = 'none';
+  const Generators = {
+    wsn() {
+      const word = FakeWords.generate(6, true);
+      const symbol = randomSymbol(true, 1);
+      const digits = randomDigits(2);
+      return `${word}${symbol}${digits}`;
+    },
+    wordPassword(options) {
+      const words = [];
+      const count = clamp(options.length || 4, 1, 256);
+      for (let i = 0; i < count; i++) {
+        const word = dictionaryWord();
+        if (options.cap && (options.capAll || i === 0)) {
+          words.push(capitalize(word));
+        } else {
+          words.push(word);
+        }
       }
-    }, 200);
-  }
-}
+      let password = words.join('');
+      if (options.sym) {
+        password += randomSymbol(options.symSimple !== false, clamp(options.symNum ?? 1, 1, 99));
+      }
+      if (options.num) {
+        password += randomDigits(clamp(options.numNum ?? 2, 1, 99));
+      }
+      return password;
+    }
+  };
 
-// Legacy compatibility wrapper (if older code references togglePasswordVisibility)
-function togglePasswordVisibility(fieldId) {
-  const field = document.getElementById(fieldId);
-  if (!field) return;
-  const makeVisible = field.type === 'password';
-  setPasswordVisibility(field, makeVisible);
-  // sync main switch if applicable
-  if (field.id === 'password') {
-    const mainSwitch = document.getElementById('passwordVisible');
-    if (mainSwitch) mainSwitch.checked = makeVisible;
-  }
-}
-
-/**
- * Enhanced save entry handler with validation and feedback
- */
-function handleSaveEntry() {
-  const name = document.getElementById('name').value.trim();
-  const username = document.getElementById('username').value.trim();
-  const passwordField = document.getElementById('password');
-  const password = passwordField.value.trim();
-
-  // Validate required fields
-  if (!password) {
-    showFeedback('Password is required!', 'error');
-    passwordField.focus();
-    return;
+  function dictionaryWord() {
+    const word = WordListLoader.pickWord();
+    if (word) return word;
+    return FakeWords.generate(6, false).toLowerCase();
   }
 
-  // Set default values if empty
-  const finalName = name || 'Unnamed';
-  const finalUsername = username || 'user';
+  function randomSymbol(simpleOnly, count = 1) {
+    const source = simpleOnly ? SIMPLE_SYMBOLS : ALL_SYMBOLS;
+    let result = '';
+    for (let i = 0; i < count; i++) {
+      result += source[Math.floor(Math.random() * source.length)];
+    }
+    return result;
+  }
 
-  // Update fields with final values
-  document.getElementById('name').value = finalName;
-  document.getElementById('username').value = finalUsername;
+  function randomDigits(count = 2) {
+    let result = '';
+    for (let i = 0; i < count; i++) {
+      result += Math.floor(Math.random() * 10);
+    }
+    return result;
+  }
 
-  // Call the original function
-  addPasswordEntry();
-  // Restore password field so user can still see the saved password
-  passwordField.value = password;
-  // Show success feedback
-  showFeedback(`Entry "${finalName}" saved successfully!`, 'success');
-}
+  function capitalize(word) {
+    if (!word) return '';
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }
 
-/**
- * Enhanced clear form handler
- */
-function handleClearForm() {
-  clearInputs();
-  showFeedback('Form cleared', 'info');
-}
-
-/**
- * Show user feedback with modern styling
- */
-function showFeedback(message, type = 'info', opts = {}) {
-  const { toast = false, duration = 3500 } = opts;
-  if (toast && window.showToast) return window.showToast(message, type, duration);
-  const headerStatus = document.getElementById('headerStatus');
-  const textEl = document.getElementById('headerStatusText');
-  const iconEl = document.getElementById('headerStatusIcon');
-  if (headerStatus && textEl) {
-    const icons = { success: '✓', error: '⚠', info: 'ℹ' };
+  function showFeedback(message, type = 'info', opts = {}) {
+    const { toast = false, duration = 3500 } = opts;
+    if (toast && window.showToast) {
+      window.showToast(message, type, duration);
+      return;
+    }
+    const headerStatus = document.getElementById('headerStatus');
+    const textEl = document.getElementById('headerStatusText');
+    const iconEl = document.getElementById('headerStatusIcon');
+    if (!headerStatus || !textEl || !iconEl) return;
+    const icons = { success: '✅', error: '⚠️', info: 'ℹ️' };
     textEl.textContent = message;
     iconEl.textContent = icons[type] || icons.info;
     headerStatus.classList.remove('success', 'error', 'info');
-    headerStatus.classList.add('show', type);
+    headerStatus.classList.add(type);
     headerStatus.hidden = false;
+    headerStatus.classList.add('show');
     clearTimeout(headerStatus._hideTimer);
     headerStatus._hideTimer = setTimeout(() => {
       headerStatus.classList.remove('show');
-      setTimeout(() => { if (!headerStatus.classList.contains('show')) headerStatus.hidden = true; }, 400);
+      setTimeout(() => {
+        if (!headerStatus.classList.contains('show')) headerStatus.hidden = true;
+      }, 350);
     }, duration);
   }
-}
 
-/**
- * Enhanced dynamic event listeners with better delegation
- */
-function initializeDynamicEventListeners() {
-  // Use event delegation for dynamically created elements
-  document.addEventListener('click', function (event) {
-    const target = event.target;
-
-    // Handle save button clicks on dynamic password entries
-    if (target.classList.contains('btn-save') && target.id.includes('save_')) {
-      const formId = target.closest('form').id;
-      editPasswordEntry(formId);
-      showFeedback('Password entry updated', 'success');
+  function updateStorageStatus() {
+    const badge = elements.storageStatus;
+    if (!badge) return;
+    badge.classList.remove('pill-success', 'pill-danger');
+    if (state.autoSave) {
+      badge.textContent = 'Auto-save on';
+      badge.classList.add('pill-success');
+    } else {
+      badge.textContent = 'Manual mode';
+      badge.classList.add('pill-danger');
     }
+  }
 
-    // Handle delete button clicks on dynamic password entries
-    if (target.classList.contains('btn-delete') && target.id.includes('delete_')) {
-      const formId = target.closest('form').id;
-      const entryName = target.closest('form').querySelector('input[placeholder="Name"]').value || 'entry';
-      customConfirm(`Delete password entry for "${entryName}"?`, { okText: 'Delete', okType: 'danger' })
-        .then(ok => { if (ok) { deletePasswordEntry(formId); showFeedback('Password entry deleted', 'info'); } });
+  function setWordListStatus(status) {
+    const badge = elements.wordListStatus;
+    if (!badge) return;
+    badge.classList.remove('pill-success', 'pill-danger');
+    switch (status) {
+      case 'ready':
+        badge.textContent = 'Word list ready';
+        badge.classList.add('pill-success');
+        break;
+      case 'error':
+        badge.textContent = 'Word list unavailable';
+        badge.classList.add('pill-danger');
+        break;
+      default:
+        badge.textContent = 'Loading word list…';
+        break;
     }
-  });
-  // Dynamic password visibility handled by attachPasswordSwitchHandlers
-}
-
-/**
- * Toggle password visibility for dynamic entries
- */
-// Removed old toggleDynamicPasswordVisibility (replaced by setPasswordVisibility)
-
-/**
- * Enhanced password generation handler
- */
-function handleGenerateWordPassword() {
-  const length = parseInt(document.getElementById('length').value);
-  const cap = document.getElementById('cap').checked;
-  const capAll = document.getElementById('capAll').checked;
-  const sym = document.getElementById('sym').checked;
-  const symNum = parseInt(document.getElementById('symNum').value);
-  const symSimple = document.getElementById('symSimple').checked;
-  const num = document.getElementById('num').checked;
-  const numNum = parseInt(document.getElementById('numNum').value);
-
-  // Validate inputs
-  if (length < 1 || length > 256) {
-    showToast('Length must be between 1 and 256', 'error');
-    return;
   }
 
-  // Generate password
-  const password = genWordPassword(length, cap, capAll, sym, symNum, symSimple, num, numNum);
-  window.showFeedback(`Generated ${length}-word password`, 'success');
-  if (window.onPasswordGenerated) window.onPasswordGenerated(password, { copied: true });
-}
-
-/**
- * Initialize animations and visual enhancements
- */
-function initializeAnimations() {
-  // Add smooth transitions to all buttons
-  const buttons = document.querySelectorAll('button');
-  buttons.forEach(button => {
-    button.addEventListener('mouseenter', function () {
-      this.style.transform = 'translateY(-1px)';
-    });
-
-    button.addEventListener('mouseleave', function () {
-      this.style.transform = 'translateY(0)';
-    });
-  });
-
-  // Add focus animations to inputs
-  const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="password"]');
-  inputs.forEach(input => {
-    input.addEventListener('focus', function () {
-      this.style.transform = 'scale(1.02)';
-    });
-
-    input.addEventListener('blur', function () {
-      this.style.transform = 'scale(1)';
-    });
-  });
-}
-
-/**
- * Setup password visibility toggles
- */
-function setupPasswordVisibilityToggles() {
-  attachPasswordSwitchHandlers();
-}
-
-/**
- * Update the passwords display section visibility
- */
-function updatePasswordsDisplay() {
-  const passwordsSection = document.getElementById('passwordsSection');
-  const passwordsContainer = document.getElementById('passwords');
-
-  if (passwordsSection && passwordsContainer) {
-    // Show/hide the passwords section based on whether there are any passwords
-    const observer = new MutationObserver(function (mutations) {
-      const hasPasswords = passwordsContainer.children.length > 0;
-      passwordsSection.style.display = hasPasswords ? 'block' : 'none';
-    });
-
-    observer.observe(passwordsContainer, { childList: true });
-  }
-}
-
-/**
- * Dynamically load pass.js script
- */
-function loadPasswordScript() {
-  loadScript('js/pass.js');
-}
-
-/**
- * Enhanced utility functions
- */
-function getElementValue(id, defaultValue = '') {
-  const element = document.getElementById(id);
-  return element ? element.value : defaultValue;
-}
-
-function setElementValue(id, value) {
-  const element = document.getElementById(id);
-  if (element) {
-    element.value = value;
-    // Add visual feedback for value changes
-    element.style.background = 'rgba(122, 162, 255, 0.1)';
-    setTimeout(() => {
-      element.style.background = '';
-    }, 300);
-  }
-}
-
-// Override the original toggle function to use enhanced version
-window.toggle = function (id) {
-  const element = document.getElementById(id);
-  if (element) {
-    const isHidden = element.hasAttribute('hidden') || element.style.display === 'none';
-    toggleNavPanel(id, isHidden);
-  }
-};
-
-// Override the original togglePass function
-window.togglePass = function (fieldId) { togglePasswordVisibility(fieldId || 'password'); };
-
-// Override clipboard and feedback functions
-window.addEventListener('load', function () {
-  // Override copyToClipBoard function
-  if (window.copyToClipBoard) {
-    const originalCopyToClipBoard = window.copyToClipBoard;
-    window.copyToClipBoard = function (text) {
-      navigator.clipboard.writeText(text).then(() => {
-        showFeedback('Copied to Clipboard!', 'success');
-        showToast(text, 'info');
-      }).catch(() => {
-        showFeedback('Failed to Copy to Clipboard!', 'error');
-        showToast(text, 'error');
-      });
-    };
+  function toggleNavPanel(id, show) {
+    const panel = document.getElementById(id);
+    if (!panel) return;
+    if (show) {
+      panel.classList.add('show');
+      panel.style.display = 'block';
+    } else {
+      panel.classList.remove('show');
+      panel.style.display = 'none';
+    }
   }
 
-  // Override newPasswordEntry to fix field ordering
-  if (window.newPasswordEntry) {
-    window.newPasswordEntry = function (name, user, pass, id) {
-      let clone = document.getElementById('passEntry_').cloneNode(true);
-      clone.id = clone.id + id;
-      clone.name = clone.name + id;
+  function createId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return `pw-${Math.random().toString(36).slice(2, 10)}`;
+  }
 
-      // Fix the field assignment by using specific selectors
-      const nameField = clone.querySelector('input[placeholder="Name"]');
-      const usernameField = clone.querySelector('input[placeholder="Username"]');
-      const passwordField = clone.querySelector('input[placeholder="Password"]');
+  function readBoolean(value, fallback) {
+    if (value === '1' || value === 'true') return true;
+    if (value === '0' || value === 'false') return false;
+    return fallback;
+  }
 
-      if (nameField) nameField.value = name;
-      if (usernameField) usernameField.value = user;
-      if (passwordField) passwordField.value = pass;
+  function readJson(serialized) {
+    if (!serialized) return [];
+    try {
+      return JSON.parse(serialized);
+    } catch (err) {
+      console.warn('Unable to parse stored entries', err);
+      return [];
+    }
+  }
 
-      // Update IDs for all elements
-      const allElements = clone.querySelectorAll('[id]');
-      allElements.forEach(element => {
-        if (element.id && !element.id.endsWith(id)) {
-          element.id = element.id + id;
-        }
-      });
-      // Ensure embedded structure exists
-      const pwdField = clone.querySelector('#password_' + id);
-      if (pwdField && !pwdField.closest('.password-field-wrap')) {
-        const wrap = document.createElement('div');
-        wrap.className = 'password-field-wrap';
-        const slot = document.createElement('div');
-        slot.className = 'embedded-switch-slot';
-        const label = document.createElement('label');
-        label.className = 'toggle-switch password-switch compact';
-        label.title = 'Show/Hide';
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.className = 'dynamic-pass-visible';
-        input.setAttribute('data-target', pwdField.id);
-        const span = document.createElement('span');
-        span.className = 'toggle-slider';
-        label.appendChild(input); label.appendChild(span);
-        slot.appendChild(label);
-        pwdField.classList.add('embedded-switch');
-        pwdField.parentNode.insertBefore(wrap, pwdField);
-        wrap.appendChild(pwdField);
-        wrap.appendChild(slot);
+  function readSessionValue(key) {
+    try {
+      return sessionStorage.getItem(key) || '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function normalizeEntries(entries) {
+    if (!Array.isArray(entries)) return [];
+    return entries.map(item => {
+      if (Array.isArray(item)) {
+        return {
+          id: createId(),
+          name: item[0] || 'Unnamed',
+          username: item[1] || 'user',
+          password: item[2] || ''
+        };
       }
+      return {
+        id: item.id || createId(),
+        name: item.name || 'Unnamed',
+        username: item.username || 'user',
+        password: item.password || ''
+      };
+    });
+  }
 
-      // ensure password switch works in cloned entry
-      return clone;
+  function buildEntry(entry) {
+    if (!entry) return { id: createId(), name: 'Unnamed', username: 'user', password: '' };
+    return {
+      id: entry.id || createId(),
+      name: entry.name || 'Unnamed',
+      username: entry.username || 'user',
+      password: entry.password || ''
     };
   }
-});
 
-// Enhanced password list update function
-const originalUpdatePasswords = window.updatePasswords;
-if (originalUpdatePasswords) {
-  window.updatePasswords = function () {
-    originalUpdatePasswords();
-    // Trigger display update
-    updatePasswordsDisplay();
-  };
-}
-
-/** Modal System (alert/confirm/prompt replacements) */
-function initializeModalSystem() {
-  // Inject modal HTML if not present
-  if (!document.getElementById('dialogModal')) {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = `\n<div class="modal" id="dialogModal" aria-hidden="true">\n  <div class="modal-card dialog-card" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">\n    <h3 id="dialogTitle" class="dialog-title">Dialog</h3>\n    <div class="dialog-message" id="dialogMessage"></div>\n    <div class="dialog-input-wrap" id="dialogInputWrap" style="display:none;">\n      <input type="text" id="dialogInput" autocomplete="off" />\n    </div>\n    <div class="modal-actions dialog-actions">\n      <button class="btn" id="dialogCancel">Cancel</button>\n      <button class="btn primary" id="dialogOk">OK</button>\n    </div>\n  </div>\n</div>`;
-    document.body.appendChild(wrapper.firstElementChild);
-  }
-
-  const modal = document.getElementById('dialogModal');
-  const titleEl = document.getElementById('dialogTitle');
-  const messageEl = document.getElementById('dialogMessage');
-  const inputWrap = document.getElementById('dialogInputWrap');
-  const inputEl = document.getElementById('dialogInput');
-  const okBtn = document.getElementById('dialogOk');
-  const cancelBtn = document.getElementById('dialogCancel');
-
-  function openModal({ title, message, showInput = false, okText = 'OK', cancelText = 'Cancel', okType }) {
-    titleEl.textContent = title;
-    messageEl.textContent = message;
-    inputWrap.style.display = showInput ? 'block' : 'none';
-    inputEl.value = '';
-    okBtn.textContent = okText;
-    cancelBtn.textContent = cancelText;
-    okBtn.classList.toggle('danger', okType === 'danger');
-    modal.classList.add('open');
-    modal.setAttribute('aria-hidden', 'false');
-    if (showInput) setTimeout(() => inputEl.focus(), 30); else okBtn.focus();
-  }
-  function closeModal() {
-    modal.classList.remove('open');
-    modal.setAttribute('aria-hidden', 'true');
-  }
-
-  function customAlert(message, title = 'Alert') {
-    return new Promise(resolve => {
-      openModal({ title, message });
-      function handleOk() { cleanup(); resolve(); }
-      function handleCancel() { cleanup(); resolve(); }
-      function onKey(e) { if (e.key === 'Escape') { handleCancel(); } if (e.key === 'Enter') { handleOk(); } }
-      function cleanup() { okBtn.removeEventListener('click', handleOk); cancelBtn.removeEventListener('click', handleCancel); document.removeEventListener('keydown', onKey); closeModal(); }
-      okBtn.addEventListener('click', handleOk); cancelBtn.addEventListener('click', handleCancel); document.addEventListener('keydown', onKey);
+  function createImportInput(onChange) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.style.display = 'none';
+    input.addEventListener('change', event => {
+      onChange?.(event.target.files);
     });
-  }
-  function customConfirm(message, { title = 'Confirm', okText = 'OK', cancelText = 'Cancel', okType } = {}) {
-    return new Promise(resolve => {
-      openModal({ title, message, okText, cancelText, okType });
-      function handleOk() { cleanup(); resolve(true); }
-      function handleCancel() { cleanup(); resolve(false); }
-      function onKey(e) { if (e.key === 'Escape') { handleCancel(); } if (e.key === 'Enter') { handleOk(); } }
-      function cleanup() { okBtn.removeEventListener('click', handleOk); cancelBtn.removeEventListener('click', handleCancel); document.removeEventListener('keydown', onKey); closeModal(); }
-      okBtn.addEventListener('click', handleOk); cancelBtn.addEventListener('click', handleCancel); document.addEventListener('keydown', onKey);
-    });
-  }
-  function customPrompt(message, { title = 'Prompt', placeholder = '', okText = 'OK', cancelText = 'Cancel' } = {}) {
-    return new Promise(resolve => {
-      openModal({ title, message, showInput: true, okText, cancelText });
-      inputEl.placeholder = placeholder;
-      function handleOk() { const v = inputEl.value; cleanup(); resolve(v); }
-      function handleCancel() { cleanup(); resolve(null); }
-      function onKey(e) { if (e.key === 'Escape') { handleCancel(); } if (e.key === 'Enter') { handleOk(); } }
-      function cleanup() { okBtn.removeEventListener('click', handleOk); cancelBtn.removeEventListener('click', handleCancel); document.removeEventListener('keydown', onKey); closeModal(); }
-      okBtn.addEventListener('click', handleOk); cancelBtn.addEventListener('click', handleCancel); document.addEventListener('keydown', onKey);
-    });
-  }
-
-  // Expose
-  window.customAlert = customAlert;
-  window.customConfirm = customConfirm;
-  window.customPrompt = customPrompt;
-
-  // Override native (non-blocking semantics compared to real ones)
-  window.alert = (msg) => { customAlert(String(msg)); };
-  window.confirm = (msg) => { console.warn('confirm() overridden; use customConfirm directly'); customConfirm(String(msg)).then(() => { }); return true; };
-  window.prompt = (msg, def = '') => { console.warn('prompt() overridden; use customPrompt directly'); customPrompt(String(msg), { placeholder: def }).then(() => { }); return def; };
-}
-
-// wait for WordList variable to be ready
-(function waitForWordList() {
-  if (WordList && Array.isArray(WordList) && WordList.length > 0) {
-    const scriptTag = document.getElementById('wordListScript');
-    window.WordList = WordList;
-    console.info('WordList loaded!');
-    console.log('List:', scriptTag.src.split('/').pop() || 'UNKNOWN');
-    console.log('Words:', WordList.length, 'words.');
-    // initializeApp(); // no longer needed; already initialized or guarded
-    loadPasswordScript();
-  } else {
-    console.log('WordList Loading...');
-    setTimeout(waitForWordList, 100);
+    document.body.appendChild(input);
+    return input;
   }
 })();
