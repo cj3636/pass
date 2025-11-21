@@ -3,7 +3,7 @@
 ![App Type](https://img.shields.io/badge/type-static%20web-blue)
 ![Stack](https://img.shields.io/badge/stack-HTML%20%2B%20CSS%20%2B%20JS-brightgreen)
 ![Data](https://img.shields.io/badge/storage-local%20%26%20session%20only-orange)
-![License](https://img.shields.io/badge/license-not%20specified-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 A glassmorphism-themed password generator and entry manager focused on quick, shareable passwords. The app runs entirely in the browser, stores data locally, and ships without external dependencies.
 
@@ -57,4 +57,4 @@ For additional word lists, add a script tag similar to `js/words/small.js` with 
 - Keep word lists concise in source control; if you need larger lists consider loading them at runtime or splitting by size.
 
 ## License
-Not specified. Add a license file and update the badge when one is chosen.
+MIT License. See `LICENSE` for details.
