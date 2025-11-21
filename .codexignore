@@ -1,0 +1,14 @@
+small.js
+medium.js
+large.js
+
+.gitattributes
+
+.vscode/
+.idea/
+node_modules/
+dist/
+build/
+coverage/
+.env
+.DS_Store
