@@ -1,14 +1,7 @@
-small.js
-medium.js
-large.js
+.vscode/
+.idea/
+.env
 
 .gitattributes
 
-.vscode/
-.idea/
-node_modules/
-dist/
-build/
-coverage/
-.env
-.DS_Store
+words/
